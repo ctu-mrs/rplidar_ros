@@ -6,8 +6,8 @@
  *  Copyright (c) 2014 - 2016 Shanghai Slamtec Co., Ltd.
  *  http://www.slamtec.com
  *
- */
-/*
+ *
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
@@ -142,22 +142,27 @@ bool checkRPLIDARHealth(RPlidarDriver *drv) {
   }
 }
 
-bool stop_motor(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res) {
+bool stop_motor([[maybe_unused]] std_srvs::Empty::Request &req, [[maybe_unused]] std_srvs::Empty::Response &res) {
+
   if (!drv)
     return false;
 
   ROS_DEBUG("Stop motor");
   drv->stop();
   drv->stopMotor();
+
   return true;
 }
 
-bool start_motor(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res) {
+bool start_motor([[maybe_unused]] std_srvs::Empty::Request &req, [[maybe_unused]] std_srvs::Empty::Response &res) {
+
   if (!drv)
     return false;
+
   ROS_DEBUG("Start motor");
   drv->startMotor();
   drv->startScan(0, 1);
+
   return true;
 }
 
@@ -285,7 +290,8 @@ int main(int argc, char *argv[]) {
           rplidar_response_measurement_node_hq_t angle_compensate_nodes[angle_compensate_nodes_count + 8];
           memset(angle_compensate_nodes, 0, angle_compensate_nodes_count * sizeof(rplidar_response_measurement_node_hq_t));
 
-          int i = 0, j = 0;
+          uint i = 0;
+          int j = 0;
           for (; i < count; i++) {
             if (nodes[i].dist_mm_q2 != 0) {
               float angle       = getAngle(nodes[i]);
