@@ -42,6 +42,7 @@
 #endif
 
 #define DEG2RAD(x) ((x)*M_PI / 180.)
+#define RANGE_MIN 0.4
 
 using namespace rp::standalone::rplidar;
 
@@ -68,7 +69,7 @@ void publish_scan(ros::Publisher *pub, rplidar_response_measurement_node_hq_t *n
 
   scan_msg.scan_time      = scan_time;
   scan_msg.time_increment = scan_time / (double)(node_count - 1);
-  scan_msg.range_min      = 0.15;
+  scan_msg.range_min      = RANGE_MIN;
   scan_msg.range_max      = max_distance;  // 8.0;
 
   scan_msg.intensities.resize(node_count);
