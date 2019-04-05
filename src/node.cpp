@@ -48,7 +48,7 @@ using namespace rp::standalone::rplidar;
 
 RPlidarDriver *drv = NULL;
 
-void publish_scan(ros::Publisher *pub, rplidar_response_measurement_node_hq_t *nodes, size_t node_count, ros::Time start, double scan_time, bool inverted,
+void publish_scan(ros::Publisher *pub, ros::Publisher *pub_raw, rplidar_response_measurement_node_hq_t *nodes, size_t node_count, ros::Time start, double scan_time, bool inverted,
                   float angle_min, float angle_max, float max_distance, std::string frame_id) {
   static int             scan_count = 0;
   sensor_msgs::LaserScan scan_msg;
@@ -92,6 +92,30 @@ void publish_scan(ros::Publisher *pub, rplidar_response_measurement_node_hq_t *n
       else
         scan_msg.ranges[node_count - 1 - i] = read_value;
       scan_msg.intensities[node_count - 1 - i] = (float)(nodes[i].quality >> 2);
+    }
+  }
+  pub_raw->publish(scan_msg);
+  // Dan's filter
+  for (int i = 0; i < (int)scan_msg.ranges.size(); i++) {
+    if (scan_msg.ranges[i] < 0.3) {
+      scan_msg.ranges[i] = max_distance + 10;
+    }
+    if (scan_msg.ranges[i] < 3.0) {
+      int tmpindex      = i;
+      int close_samples = 0;
+      for (int it = 0; it < 10; it++) {
+        if (fabs(scan_msg.ranges[i] - scan_msg.ranges[tmpindex]) < 1.0) {
+          close_samples++;
+        }
+        tmpindex++;
+        if (tmpindex > (int)scan_msg.ranges.size()) {
+          it            = 10;
+          close_samples = 10;
+        }
+      }
+      if (close_samples < 4) {
+        scan_msg.ranges[i] = max_distance + 10;
+      }
     }
   }
 
@@ -185,6 +209,7 @@ int main(int argc, char *argv[]) {
   ros::NodeHandle nh;
   ros::NodeHandle nh_private("~");
   ros::Publisher  scan_pub = nh_private.advertise<sensor_msgs::LaserScan>("scan", 1000);
+  ros::Publisher  scan_pub_raw = nh_private.advertise<sensor_msgs::LaserScan>("scan_raw", 1000);
   nh_private.param<std::string>("serial_port", serial_port, "/dev/ttyUSB0");
   nh_private.param<int>("serial_baudrate", serial_baudrate, 115200 /*256000*/);  // ros run for A1 A2, change to 256000 if A3
   nh_private.param<std::string>("frame_id", frame_id, "laser_frame");
@@ -292,7 +317,7 @@ int main(int argc, char *argv[]) {
           memset(angle_compensate_nodes, 0, angle_compensate_nodes_count * sizeof(rplidar_response_measurement_node_hq_t));
 
           uint i = 0;
-          int j = 0;
+          int  j = 0;
           for (; i < count; i++) {
             if (nodes[i].dist_mm_q2 != 0) {
               float angle       = getAngle(nodes[i]);
@@ -305,7 +330,7 @@ int main(int argc, char *argv[]) {
             }
           }
 
-          publish_scan(&scan_pub, angle_compensate_nodes, angle_compensate_nodes_count, start_scan_time, scan_duration, inverted, angle_min, angle_max,
+          publish_scan(&scan_pub, &scan_pub_raw, angle_compensate_nodes, angle_compensate_nodes_count, start_scan_time, scan_duration, inverted, angle_min, angle_max,
                        max_distance, frame_id);
         } else {
           int start_node = 0, end_node = 0;
@@ -322,7 +347,7 @@ int main(int argc, char *argv[]) {
           angle_min = DEG2RAD(getAngle(nodes[start_node]));
           angle_max = DEG2RAD(getAngle(nodes[end_node]));
 
-          publish_scan(&scan_pub, &nodes[start_node], end_node - start_node + 1, start_scan_time, scan_duration, inverted, angle_min, angle_max, max_distance,
+          publish_scan(&scan_pub, &scan_pub_raw, &nodes[start_node], end_node - start_node + 1, start_scan_time, scan_duration, inverted, angle_min, angle_max, max_distance,
                        frame_id);
         }
       } else if (op_result == RESULT_OPERATION_FAIL) {
@@ -330,7 +355,7 @@ int main(int argc, char *argv[]) {
         float angle_min = DEG2RAD(0.0f);
         float angle_max = DEG2RAD(359.0f);
 
-        publish_scan(&scan_pub, nodes, count, start_scan_time, scan_duration, inverted, angle_min, angle_max, max_distance, frame_id);
+        publish_scan(&scan_pub, &scan_pub_raw, nodes, count, start_scan_time, scan_duration, inverted, angle_min, angle_max, max_distance, frame_id);
       }
     }
 
