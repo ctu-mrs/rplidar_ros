@@ -48,10 +48,11 @@ using namespace rp::standalone::rplidar;
 
 RPlidarDriver *drv = NULL;
 
-void publish_scan(ros::Publisher *pub, ros::Publisher *pub_raw, rplidar_response_measurement_node_hq_t *nodes, size_t node_count, ros::Time start, double scan_time, bool inverted,
-                  float angle_min, float angle_max, float max_distance, std::string frame_id) {
+void publish_scan(ros::Publisher *pub, ros::Publisher *pub_raw, rplidar_response_measurement_node_hq_t *nodes, size_t node_count, ros::Time start,
+                  double scan_time, bool inverted, float angle_min, float angle_max, float max_distance, std::string frame_id) {
   static int             scan_count = 0;
   sensor_msgs::LaserScan scan_msg;
+  sensor_msgs::LaserScan scan_msg_tmp;
 
   scan_msg.header.stamp    = start;
   scan_msg.header.frame_id = frame_id;
@@ -96,28 +97,29 @@ void publish_scan(ros::Publisher *pub, ros::Publisher *pub_raw, rplidar_response
   }
   pub_raw->publish(scan_msg);
   // Dan's filter
-  for (int i = 0; i < (int)scan_msg.ranges.size(); i++) {
+   scan_msg_tmp = scan_msg;
+  
+  int filter_size = 20;
+  int req_samples = 8;
+  for (int i = int(0 + filter_size/2); i < (int)(scan_msg.ranges.size() - filter_size/2); i++) {
     if (scan_msg.ranges[i] < 0.3) {
-      scan_msg.ranges[i] = max_distance + 10;
+      scan_msg_tmp.ranges[i] = max_distance + 10;
     }
-    if (scan_msg.ranges[i] < 3.0) {
-      int tmpindex      = i;
+    if (scan_msg.ranges[i] < 2.0) {
+      int tmpindex      = int(i - (filter_size/2));;
       int close_samples = 0;
-      for (int it = 0; it < 10; it++) {
-        if (fabs(scan_msg.ranges[i] - scan_msg.ranges[tmpindex]) < 1.0) {
+      for (int it = 0; it < filter_size; it++) {
+        if (fabs(scan_msg.ranges[i] - scan_msg.ranges[tmpindex]) < 0.15) {
           close_samples++;
         }
         tmpindex++;
-        if (tmpindex > (int)scan_msg.ranges.size()) {
-          it            = 10;
-          close_samples = 10;
-        }
       }
-      if (close_samples < 4) {
-        scan_msg.ranges[i] = max_distance + 10;
+      if (close_samples < req_samples) {
+        scan_msg_tmp.ranges[i] = max_distance + 10;
       }
     }
   }
+   scan_msg = scan_msg_tmp;
 
   pub->publish(scan_msg);
 }
@@ -208,7 +210,7 @@ int main(int argc, char *argv[]) {
   std::string     scan_mode;
   ros::NodeHandle nh;
   ros::NodeHandle nh_private("~");
-  ros::Publisher  scan_pub = nh_private.advertise<sensor_msgs::LaserScan>("scan", 1000);
+  ros::Publisher  scan_pub     = nh_private.advertise<sensor_msgs::LaserScan>("scan", 1000);
   ros::Publisher  scan_pub_raw = nh_private.advertise<sensor_msgs::LaserScan>("scan_raw", 1000);
   nh_private.param<std::string>("serial_port", serial_port, "/dev/ttyUSB0");
   nh_private.param<int>("serial_baudrate", serial_baudrate, 115200 /*256000*/);  // ros run for A1 A2, change to 256000 if A3
@@ -330,8 +332,8 @@ int main(int argc, char *argv[]) {
             }
           }
 
-          publish_scan(&scan_pub, &scan_pub_raw, angle_compensate_nodes, angle_compensate_nodes_count, start_scan_time, scan_duration, inverted, angle_min, angle_max,
-                       max_distance, frame_id);
+          publish_scan(&scan_pub, &scan_pub_raw, angle_compensate_nodes, angle_compensate_nodes_count, start_scan_time, scan_duration, inverted, angle_min,
+                       angle_max, max_distance, frame_id);
         } else {
           int start_node = 0, end_node = 0;
           int i = 0;
@@ -347,8 +349,8 @@ int main(int argc, char *argv[]) {
           angle_min = DEG2RAD(getAngle(nodes[start_node]));
           angle_max = DEG2RAD(getAngle(nodes[end_node]));
 
-          publish_scan(&scan_pub, &scan_pub_raw, &nodes[start_node], end_node - start_node + 1, start_scan_time, scan_duration, inverted, angle_min, angle_max, max_distance,
-                       frame_id);
+          publish_scan(&scan_pub, &scan_pub_raw, &nodes[start_node], end_node - start_node + 1, start_scan_time, scan_duration, inverted, angle_min, angle_max,
+                       max_distance, frame_id);
         }
       } else if (op_result == RESULT_OPERATION_FAIL) {
         // All the data is invalid, just publish them
