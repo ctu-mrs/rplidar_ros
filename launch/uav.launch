@@ -1,6 +1,11 @@
 <launch>
 
   <arg name="uav_name" default="$(optenv UAV_NAME uav)" />
+  <arg name="mode" default="outdoor" />
+
+  <arg name="scan_mode" if="$(eval (arg('mode') == 'outdoor'))" value="Stability" />
+  <arg name="scan_mode" if="$(eval (arg('mode') == 'indoor'))" value="Sensitivity" />
+  <arg name="scan_mode" if="$(eval (not arg('mode') == 'indoor') and (not arg('mode') == 'outdoor'))" value="Stability" />
 
   <group ns="$(arg uav_name)">
 
@@ -11,7 +16,12 @@
       <param name="frame_id" type="string" value="$(arg uav_name)/rplidar"/>
       <param name="inverted" type="bool" value="false"/>
       <param name="angle_compensate" type="bool" value="true"/>
-      <param name="scan_mode" type="string" value="Sensitivity"/>
+
+      <!-- Sensitivity: optimized for longer ranger, better sensitivity but weak environment elimination -->
+      <!-- Boost: optimized for sample rate -->
+      <!-- Stability: for light elimination performance, but shorter range and lower sample rate -->
+      <param name="scan_mode" type="string" value="$(arg scan_mode)"/>
+
       <remap from="~scan" to="~scan" />
 
     </node>
