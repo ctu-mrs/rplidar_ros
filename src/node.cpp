@@ -37,6 +37,8 @@
 #include "std_srvs/Empty.h"
 #include "rplidar.h"
 
+#include <mrs_msgs/String.h>
+
 #ifndef _countof
 #define _countof(_Array) (int)(sizeof(_Array) / sizeof(_Array[0]))
 #endif
@@ -47,6 +49,12 @@
 using namespace rp::standalone::rplidar;
 
 RPlidarDriver *drv = NULL;
+
+float           max_distance = 8.0;
+std::string     scan_mode;
+u_result        op_result;
+int             angle_compensate_multiple = 1;  // it stand of angle compensate at per 1 degree
+RplidarScanMode current_scan_mode;
 
 void publish_scan(ros::Publisher *pub, ros::Publisher *pub_raw, rplidar_response_measurement_node_hq_t *nodes, size_t node_count, ros::Time start,
                   double scan_time, bool inverted, float angle_min, float angle_max, float max_distance, std::string frame_id) {
@@ -97,16 +105,17 @@ void publish_scan(ros::Publisher *pub, ros::Publisher *pub_raw, rplidar_response
   }
   pub_raw->publish(scan_msg);
   // Dan's filter
-   scan_msg_tmp = scan_msg;
-  
+  scan_msg_tmp = scan_msg;
+
   int filter_size = 20;
   int req_samples = 8;
-  for (int i = int(0 + filter_size/2); i < (int)(scan_msg.ranges.size() - filter_size/2); i++) {
+  for (int i = int(0 + filter_size / 2); i < (int)(scan_msg.ranges.size() - filter_size / 2); i++) {
     if (scan_msg.ranges[i] < 0.3) {
       scan_msg_tmp.ranges[i] = max_distance + 10;
     }
     if (scan_msg.ranges[i] < 2.0) {
-      int tmpindex      = int(i - (filter_size/2));;
+      int tmpindex = int(i - (filter_size / 2));
+      ;
       int close_samples = 0;
       for (int it = 0; it < filter_size; it++) {
         if (fabs(scan_msg.ranges[i] - scan_msg.ranges[tmpindex]) < 0.15) {
@@ -119,7 +128,7 @@ void publish_scan(ros::Publisher *pub, ros::Publisher *pub_raw, rplidar_response
       }
     }
   }
-   scan_msg = scan_msg_tmp;
+  scan_msg = scan_msg_tmp;
 
   pub->publish(scan_msg);
 }
@@ -193,6 +202,57 @@ bool start_motor([[maybe_unused]] std_srvs::Empty::Request &req, [[maybe_unused]
   return true;
 }
 
+bool switch_mode([[maybe_unused]] mrs_msgs::String::Request &req, [[maybe_unused]] mrs_msgs::String::Response &res) {
+
+  if (!drv)
+    return false;
+
+  ROS_INFO("Switching Mode!");
+  std::string scan_mode;
+
+  scan_mode = req.value;
+
+  std::vector<RplidarScanMode> allSupportedScanModes;
+  op_result = drv->getAllSupportedScanModes(allSupportedScanModes);
+
+  if (IS_OK(op_result)) {
+    _u16 selectedScanMode = _u16(-1);
+    for (std::vector<RplidarScanMode>::iterator iter = allSupportedScanModes.begin(); iter != allSupportedScanModes.end(); iter++) {
+      if (iter->scan_mode == scan_mode) {
+        selectedScanMode = iter->id;
+        break;
+      }
+    }
+
+    if (selectedScanMode == _u16(-1)) {
+      ROS_ERROR("scan mode `%s' is not supported by lidar, supported modes:", scan_mode.c_str());
+      for (std::vector<RplidarScanMode>::iterator iter = allSupportedScanModes.begin(); iter != allSupportedScanModes.end(); iter++) {
+        ROS_ERROR("\t%s: max_distance: %.1f m, Point number: %.1fK", iter->scan_mode, iter->max_distance, (1000 / iter->us_per_sample));
+      }
+      return false;
+      /* op_result = RESULT_OPERATION_FAIL; */
+    } else {
+      op_result = drv->startScanExpress(false /* not force scan */, selectedScanMode, 0, &current_scan_mode);
+    }
+  }
+
+  if (IS_OK(op_result)) {
+    // default frequent is 10 hz (by motor pwm value),  current_scan_mode.us_per_sample is the number of scan point per us
+    angle_compensate_multiple = (int)(1000 * 1000 / current_scan_mode.us_per_sample / 10.0 / 360.0);
+    if (angle_compensate_multiple < 1)
+      angle_compensate_multiple = 1;
+    max_distance = current_scan_mode.max_distance;
+    ROS_INFO("current scan mode: %s, max_distance: %.1f m, Point number: %.1fK , angle_compensate: %d", current_scan_mode.scan_mode,
+             current_scan_mode.max_distance, (1000 / current_scan_mode.us_per_sample), angle_compensate_multiple);
+  } else {
+    ROS_ERROR("Can not start scan: %08x!", op_result);
+  }
+
+  ROS_INFO("Switching Mode Done!");
+  return true;
+}
+
+
 static float getAngle(const rplidar_response_measurement_node_hq_t &node) {
   return node.angle_z_q14 * 90.f / 16384.f;
 }
@@ -203,11 +263,8 @@ int main(int argc, char *argv[]) {
   std::string     serial_port;
   int             serial_baudrate = 115200;
   std::string     frame_id;
-  bool            inverted                  = false;
-  bool            angle_compensate          = true;
-  float           max_distance              = 8.0;
-  int             angle_compensate_multiple = 1;  // it stand of angle compensate at per 1 degree
-  std::string     scan_mode;
+  bool            inverted         = false;
+  bool            angle_compensate = true;
   ros::NodeHandle nh;
   ros::NodeHandle nh_private("~");
   ros::Publisher  scan_pub     = nh_private.advertise<sensor_msgs::LaserScan>("scan", 1000);
@@ -220,8 +277,6 @@ int main(int argc, char *argv[]) {
   nh_private.param<std::string>("scan_mode", scan_mode, std::string());
 
   ROS_INFO("RPLIDAR running on ROS package rplidar_ros. SDK Version: \"RPLIDAR_SDK_VERSION\"");
-
-  u_result op_result;
 
   // create the driver instance
   drv = RPlidarDriver::CreateDriver(rp::standalone::rplidar::DRIVER_TYPE_SERIALPORT);
@@ -251,10 +306,10 @@ int main(int argc, char *argv[]) {
 
   ros::ServiceServer stop_motor_service  = nh.advertiseService("stop_motor", stop_motor);
   ros::ServiceServer start_motor_service = nh.advertiseService("start_motor", start_motor);
+  ros::ServiceServer switch_mode_service = nh.advertiseService("switch_mode", switch_mode);
 
   drv->startMotor();
 
-  RplidarScanMode current_scan_mode;
   if (scan_mode.empty()) {
     op_result = drv->startScan(false /* not force scan */, true /* use typical scan mode */, 0, &current_scan_mode);
   } else {
@@ -298,6 +353,10 @@ int main(int argc, char *argv[]) {
   ros::Time end_scan_time;
   double    scan_duration;
   while (ros::ok()) {
+
+    ROS_INFO("current scan mode: %s, max_distance: %.1f m, Point number: %.1fK , angle_compensate: %d", current_scan_mode.scan_mode,
+             current_scan_mode.max_distance, (1000 / current_scan_mode.us_per_sample), angle_compensate_multiple);
+
     rplidar_response_measurement_node_hq_t nodes[360 * 8];
     size_t                                 count = _countof(nodes);
 
