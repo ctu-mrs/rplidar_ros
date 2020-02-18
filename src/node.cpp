@@ -220,6 +220,8 @@ bool switch_mode([[maybe_unused]] mrs_msgs::String::Request &req, [[maybe_unused
     for (std::vector<RplidarScanMode>::iterator iter = allSupportedScanModes.begin(); iter != allSupportedScanModes.end(); iter++) {
       if (iter->scan_mode == scan_mode) {
         selectedScanMode = iter->id;
+        res.success = true;
+        res.message = "Mode changed";
         break;
       }
     }
