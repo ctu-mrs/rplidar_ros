@@ -26,7 +26,10 @@ set(EXECUTABLES
   rplidarNode rplidarNodeClient
   )
 
-catkin_package()
+catkin_package(
+  LIBRARIES ${LIBRARIES}
+  CATKIN_DEPENDS roscpp sensor_msgs mrs_msgs
+  )
 
 add_executable(rplidarNode src/node.cpp ${RPLIDAR_SDK_SRC})
 target_link_libraries(rplidarNode ${catkin_LIBRARIES})
