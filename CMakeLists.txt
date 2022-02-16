@@ -3,24 +3,28 @@ project(rplidar_ros)
 
 set(RPLIDAR_SDK_PATH "./sdk/")
 
-FILE(GLOB RPLIDAR_SDK_SRC 
+FILE(GLOB RPLIDAR_SDK_SRC
   "${RPLIDAR_SDK_PATH}/src/arch/linux/*.cpp"
   "${RPLIDAR_SDK_PATH}/src/hal/*.cpp"
   "${RPLIDAR_SDK_PATH}/src/*.cpp"
-)
+  )
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   rosconsole
   sensor_msgs
   mrs_msgs
-)
+  )
 
 include_directories(
   ${RPLIDAR_SDK_PATH}/include
   ${RPLIDAR_SDK_PATH}/src
   ${catkin_INCLUDE_DIRS}
-)
+  )
+
+set(EXECUTABLES
+  rplidarNode rplidarNodeClient
+  )
 
 catkin_package()
 
@@ -30,13 +34,15 @@ target_link_libraries(rplidarNode ${catkin_LIBRARIES})
 add_executable(rplidarNodeClient src/client.cpp)
 target_link_libraries(rplidarNodeClient ${catkin_LIBRARIES})
 
-install(TARGETS rplidarNode rplidarNodeClient
-  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
+## --------------------------------------------------------------
+## |                           Install                          |
+## --------------------------------------------------------------
 
-install(DIRECTORY launch rviz sdk
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+install(TARGETS ${EXECUTABLES}
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+  )
+
+install(DIRECTORY launch rviz sdk scripts
   USE_SOURCE_PERMISSIONS
-)
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+  )
